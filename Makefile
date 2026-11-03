@@ -5,7 +5,7 @@ include $(THEOS)/makefiles/common.mk
 LIBRARY_NAME = FarmChestAuto
 
 FarmChestAuto_FILES = FarmChestAuto.m
-FarmChestAuto_CFLAGS = -fobjc-arc -Wno-deprecated-declarations
+FarmChestAuto_CFLAGS = -fobjc-arc -Wno-deprecated-declarations -Wno-unused-function
 FarmChestAuto_FRAMEWORKS = UIKit CoreGraphics
 FarmChestAuto_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
 
