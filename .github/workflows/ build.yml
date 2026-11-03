@@ -10,10 +10,19 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Theos
-        uses: waruhachi/theos-action@v1
+
+      - name: Install Theos
+        run: |
+          brew install ldid
+          git clone --recursive https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "PATH=$HOME/theos/bin:$PATH" >> $GITHUB_ENV
+
       - name: Build
-        run: make FINALPACKAGE=1
+        run: |
+          export THEOS=$HOME/theos
+          make FINALPACKAGE=1
+
       - name: Upload dylib
         uses: actions/upload-artifact@v4
         with:
