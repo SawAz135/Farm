@@ -1,0 +1,9 @@
+Package: com.farmchestauto.tweak
+Name: FarmChestAuto
+Version: 1.0.0
+Architecture: iphoneos-arm64
+Description: Auto chest farm for Fortnite Mobile
+Maintainer: V
+Author: V
+Section: Tweaks
+Depends: mobilesubstrate
