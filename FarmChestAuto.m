@@ -1,7 +1,7 @@
 // FarmChestAuto.m
-// MAX version — full auto Fortnite farm + aim + anti-cheat + GUI
-// Offsets: v43.00
-// Target: iOS arm64 (jailbreak / ESign)
+// MAX AUTONOME — mémoire + image fallback + bus + marche + open + ESP
+// Offsets: v43.00 CL-59596594
+// Target: iOS arm64 (injecté dans le processus)
 
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -23,7 +23,6 @@
 #define OFFSET_PLAYERCONTROLLER 0x30
 #define OFFSET_LOCALPLAYERS     0x38
 #define OFFSET_SEARCHEDFLAGS    0xD2A
-#define OFFSET_TEAMINDEX        0xF81
 
 typedef enum {
     StateLobby,
@@ -33,7 +32,7 @@ typedef enum {
     StateRestart
 } GameState;
 
-#pragma mark - Anti Debug MAX
+#pragma mark - Anti Debug
 
 static BOOL isDebugged(void) {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
@@ -50,13 +49,6 @@ static void denyAttach(void) {
     if (ptrace_ptr) ptrace_ptr(31, 0, 0, 0);
 }
 
-static void antiDebugTiming(void) {
-    uint64_t start = mach_absolute_time();
-    for (volatile int i = 0; i < 800; i++);
-    uint64_t end = mach_absolute_time();
-    if ((end - start) > 400000) exit(0);
-}
-
 #pragma mark - Memory
 
 static uintptr_t gameBase = 0;
@@ -65,6 +57,12 @@ static uintptr_t readPtr(uintptr_t addr) {
     if (!addr || addr < 0x1000) return 0;
     @try { return *(uintptr_t *)addr; }
     @catch (__unused NSException *e) { return 0; }
+}
+
+static float readFloat(uintptr_t addr) {
+    if (!addr) return 0.f;
+    @try { return *(float *)addr; }
+    @catch (__unused NSException *e) { return 0.f; }
 }
 
 static CGPoint readPlayerPos(void) {
@@ -80,16 +78,51 @@ static CGPoint readPlayerPos(void) {
     uintptr_t pawn = readPtr(pc + OFFSET_LOCALPAWN);
     uintptr_t root = readPtr(pawn + OFFSET_ROOTCOMPONENT);
     if (!root) return CGPointZero;
-    float *loc = (float *)(root + OFFSET_RELATIVELOCATION);
-    return CGPointMake(loc[0], loc[1]);
+    float x = readFloat(root + OFFSET_RELATIVELOCATION);
+    float y = readFloat(root + OFFSET_RELATIVELOCATION + 4);
+    return CGPointMake(x, y);
 }
 
-#pragma mark - Screen + Color (optimisé)
+static NSArray *readChestWorldPositions(void) {
+    NSMutableArray *chests = [NSMutableArray array];
+    if (!gameBase) return chests;
+
+    uintptr_t gEngine = readPtr(gameBase + OFFSET_GENGINE);
+    if (!gEngine) return chests;
+    uintptr_t viewport = readPtr(gEngine + OFFSET_GAMEVIEWPORT);
+    uintptr_t world = readPtr(viewport + 0x78);
+    uintptr_t level = readPtr(world + OFFSET_PERSISTENTLEVEL);
+    uintptr_t actorsPtr = readPtr(level + OFFSET_ACTORS);
+    int count = (int)readPtr(level + OFFSET_ACTORS + 8);
+    count = MIN(MAX(count, 0), 8000);
+
+    for (int i = 0; i < count; i++) {
+        uintptr_t actor = readPtr(actorsPtr + i * 8);
+        if (!actor) continue;
+
+        uintptr_t root = readPtr(actor + OFFSET_ROOTCOMPONENT);
+        if (!root) continue;
+
+        uint8_t searched = 0;
+        @try { searched = *(uint8_t *)(actor + OFFSET_SEARCHEDFLAGS); }
+        @catch (__unused NSException *e) { continue; }
+
+        if (searched == 0) {
+            float x = readFloat(root + OFFSET_RELATIVELOCATION);
+            float y = readFloat(root + OFFSET_RELATIVELOCATION + 4);
+            if (fabsf(x) > 50.f && fabsf(y) > 50.f)
+                [chests addObject:[NSValue valueWithCGPoint:CGPointMake(x, y)]];
+        }
+    }
+    return chests;
+}
+
+#pragma mark - Screen (fallback)
 
 static UIImage *captureScreen(void) {
     UIWindow *w = UIApplication.sharedApplication.keyWindow;
     if (!w) return nil;
-    UIGraphicsBeginImageContextWithOptions(w.bounds.size, NO, 0.45);
+    UIGraphicsBeginImageContextWithOptions(w.bounds.size, NO, 0.4);
     [w.layer renderInContext:UIGraphicsGetCurrentContext()];
     UIImage *img = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
@@ -115,61 +148,26 @@ static BOOL isChestColor(UIColor *c) {
     if (!c) return NO;
     CGFloat r, g, b, a;
     [c getRed:&r green:&g blue:&b alpha:&a];
-    BOOL wood  = (r > 0.30 && r < 0.84 && g > 0.14 && g < 0.54 && b < 0.40 && (r - g) > 0.03);
+    BOOL wood  = (r > 0.30 && r < 0.84 && g > 0.14 && g < 0.54 && b < 0.40);
     BOOL rare  = (r > 0.12 && r < 0.48 && g > 0.32 && g < 0.78 && b > 0.22 && b < 0.68);
     BOOL gold  = (r > 0.52 && r < 0.96 && g > 0.38 && g < 0.82 && b < 0.38);
     return wood || rare || gold;
 }
 
-static BOOL isPlayerColor(UIColor *c) {
-    if (!c) return NO;
-    CGFloat r, g, b, a;
-    [c getRed:&r green:&g blue:&b alpha:&a];
-    BOOL skin = (r > 0.42 && r < 0.96 && g > 0.22 && g < 0.78 && b > 0.12 && b < 0.58 && (r - b) > 0.08);
-    BOOL bright = (r > 0.58 || g > 0.58 || b > 0.58) && (r + g + b) > 1.35;
-    return skin || bright;
-}
-
-static NSArray<NSValue *> *scanChests(UIImage *img) {
+static NSArray *scanChestsScreen(UIImage *img) {
     NSMutableArray *pts = [NSMutableArray array];
-    CGFloat step = 26;
+    CGFloat step = 28;
     CGSize sz = img.size;
-    CGFloat scale = 1.0 / 0.45;
-    for (CGFloat y = 50; y < sz.height - 50; y += step) {
-        for (CGFloat x = 25; x < sz.width - 25; x += step) {
-            UIColor *c = colorAt(img, CGPointMake(x, y));
-            if (isChestColor(c)) {
+    CGFloat scale = 1.0 / 0.4;
+    for (CGFloat y = 60; y < sz.height - 60; y += step) {
+        for (CGFloat x = 30; x < sz.width - 30; x += step) {
+            if (isChestColor(colorAt(img, CGPointMake(x, y)))) {
                 int hits = 0;
-                for (int dy = -7; dy <= 7; dy += 7)
-                    for (int dx = -7; dx <= 7; dx += 7)
+                for (int dy = -6; dy <= 6; dy += 6)
+                    for (int dx = -6; dx <= 6; dx += 6)
                         if (isChestColor(colorAt(img, CGPointMake(x+dx, y+dy)))) hits++;
                 if (hits >= 3)
                     [pts addObject:[NSValue valueWithCGPoint:CGPointMake(x * scale, y * scale)]];
-            }
-        }
-    }
-    return pts;
-}
-
-static NSArray<NSValue *> *scanPlayers(UIImage *img) {
-    NSMutableArray *pts = [NSMutableArray array];
-    CGFloat step = 22;
-    CGSize sz = img.size;
-    CGPoint center = CGPointMake(sz.width / 2, sz.height / 2);
-    CGFloat scale = 1.0 / 0.45;
-    for (CGFloat y = 90; y < sz.height - 90; y += step) {
-        for (CGFloat x = 45; x < sz.width - 45; x += step) {
-            UIColor *c = colorAt(img, CGPointMake(x, y));
-            if (isPlayerColor(c)) {
-                int hits = 0;
-                for (int dy = -5; dy <= 5; dy += 5)
-                    for (int dx = -5; dx <= 5; dx += 5)
-                        if (isPlayerColor(colorAt(img, CGPointMake(x+dx, y+dy)))) hits++;
-                if (hits >= 4) {
-                    CGFloat dist = hypot(x - center.x, y - center.y);
-                    if (dist > 90)
-                        [pts addObject:[NSValue valueWithCGPoint:CGPointMake(x * scale, y * scale)]];
-                }
             }
         }
     }
@@ -211,7 +209,7 @@ static void TapAt(CGPoint p, BOOL longPress) {
         [UIApplication.sharedApplication sendEvent:e];
     } @catch (__unused NSException *ex) {}
 
-    if (longPress) [NSThread sleepForTimeInterval:0.62];
+    if (longPress) [NSThread sleepForTimeInterval:0.65];
 
     [t setPhase:UITouchPhaseEnded];
     [t setTimestamp:NSProcessInfo.processInfo.systemUptime];
@@ -224,7 +222,7 @@ static void TapAt(CGPoint p, BOOL longPress) {
 static void moveStick(CGPoint dir, NSTimeInterval duration) {
     CGPoint stickCenter = CGPointMake(95, 530);
     TapAt(stickCenter, NO);
-    CGPoint dest = CGPointMake(stickCenter.x + dir.x * 58, stickCenter.y + dir.y * 58);
+    CGPoint dest = CGPointMake(stickCenter.x + dir.x * 60, stickCenter.y + dir.y * 60);
     TapAt(dest, NO);
     [NSThread sleepForTimeInterval:duration];
     TapAt(stickCenter, NO);
@@ -236,30 +234,18 @@ static void lookAround(CGPoint delta) {
     TapAt(CGPointMake(lookCenter.x + delta.x, lookCenter.y + delta.y), NO);
 }
 
-static void aimAt(CGPoint target) {
-    CGPoint screenCenter = CGPointMake(UIScreen.mainScreen.bounds.size.width / 2,
-                                       UIScreen.mainScreen.bounds.size.height / 2);
-    CGPoint delta = CGPointMake((target.x - screenCenter.x) * 0.30,
-                                (target.y - screenCenter.y) * 0.30);
-    lookAround(delta);
-}
-
 #pragma mark - Menu
 
 @interface FarmMenu : UIView
 @property (nonatomic, strong) UIButton *startBtn;
-@property (nonatomic, strong) UIButton *autoBtn;
-@property (nonatomic, strong) UIButton *aimBtn;
 @property (nonatomic, strong) UIButton *closeBtn;
 @property (nonatomic, strong) UILabel  *status;
 @property (nonatomic, strong) UISlider *speed;
-@property (nonatomic, strong) NSMutableArray<NSValue *> *chests;
-@property (nonatomic, strong) NSMutableArray<NSValue *> *players;
+@property (nonatomic, strong) NSMutableArray *worldChests;
+@property (nonatomic, strong) NSMutableArray *screenChests;
 @property (nonatomic, assign) BOOL running;
-@property (nonatomic, assign) BOOL autoRestart;
-@property (nonatomic, assign) BOOL autoAim;
+@property (nonatomic, assign) BOOL useMemory;
 @property (nonatomic, assign) GameState state;
-@property (nonatomic, assign) CGPoint restartPoint;
 @property (nonatomic, assign) NSTimeInterval interval;
 @property (nonatomic, assign) NSTimeInterval timer;
 @property (nonatomic, assign) NSTimeInterval stateTimer;
@@ -269,22 +255,36 @@ static void aimAt(CGPoint target) {
 
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
-    self.backgroundColor = [[UIColor blackColor] colorWithAlphaComponent:0.94];
+    self.clipsToBounds = YES;
+
+    CAGradientLayer *gradient = [CAGradientLayer layer];
+    gradient.frame = self.bounds;
+    gradient.colors = @[
+        (id)[UIColor colorWithRed:0.05 green:0.05 blue:0.08 alpha:0.96].CGColor,
+        (id)[UIColor colorWithRed:0.02 green:0.08 blue:0.05 alpha:0.94].CGColor
+    ];
+    gradient.startPoint = CGPointMake(0, 0);
+    gradient.endPoint = CGPointMake(1, 1);
+    [self.layer insertSublayer:gradient atIndex:0];
+
     self.layer.cornerRadius = 20;
     self.layer.borderWidth = 2.2;
     self.layer.borderColor = [UIColor colorWithRed:0.0 green:0.88 blue:0.48 alpha:1].CGColor;
-    self.clipsToBounds = YES;
 
-    self.chests = [NSMutableArray array];
-    self.players = [NSMutableArray array];
+    self.worldChests = [NSMutableArray array];
+    self.screenChests = [NSMutableArray array];
     self.running = NO;
-    self.autoRestart = YES;
-    self.autoAim = YES;
+    self.useMemory = YES;
     self.state = StateLobby;
-    self.restartPoint = CGPointMake(210, 640);
-    self.interval = 2.1;
+    self.interval = 1.8;
     self.timer = 0;
     self.stateTimer = 0;
+
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(14, 10, 200, 28)];
+    title.text = @"FARM AUTO";
+    title.textColor = [UIColor colorWithRed:0.0 green:0.9 blue:0.5 alpha:1];
+    title.font = [UIFont boldSystemFontOfSize:18];
+    [self addSubview:title];
 
     _closeBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     _closeBtn.frame = CGRectMake(frame.size.width - 38, 8, 30, 30);
@@ -294,26 +294,24 @@ static void aimAt(CGPoint target) {
     [_closeBtn addTarget:self action:@selector(closeMenu) forControlEvents:UIControlEventTouchUpInside];
     [self addSubview:_closeBtn];
 
-    _status = [[UILabel alloc] initWithFrame:CGRectMake(14, 14, frame.size.width - 54, 24)];
+    _status = [[UILabel alloc] initWithFrame:CGRectMake(14, 44, frame.size.width - 28, 22)];
     _status.text = @"READY";
     _status.textColor = UIColor.whiteColor;
-    _status.font = [UIFont monospacedSystemFontOfSize:14.5 weight:UIFontWeightMedium];
+    _status.font = [UIFont monospacedSystemFontOfSize:14 weight:UIFontWeightMedium];
     [self addSubview:_status];
 
-    _startBtn = [self btn:@"START AUTO" frame:CGRectMake(14, 48, 132, 40) color:[UIColor colorWithRed:0.06 green:0.58 blue:0.30 alpha:1] action:@selector(toggle)];
-    _autoBtn  = [self btn:@"RESTART 15m: ON" frame:CGRectMake(154, 48, 132, 40) color:[UIColor colorWithRed:0.10 green:0.40 blue:0.75 alpha:1] action:@selector(toggleAuto)];
-    _aimBtn   = [self btn:@"AIM: ON" frame:CGRectMake(14, 96, 272, 36) color:[UIColor colorWithRed:0.68 green:0.16 blue:0.16 alpha:1] action:@selector(toggleAim)];
+    _startBtn = [self btn:@"ACTIVER" frame:CGRectMake(14, 74, 160, 40) color:[UIColor colorWithRed:0.06 green:0.58 blue:0.30 alpha:1] action:@selector(toggle)];
 
-    UILabel *lab = [[UILabel alloc] initWithFrame:CGRectMake(14, 140, 70, 16)];
+    UILabel *lab = [[UILabel alloc] initWithFrame:CGRectMake(14, 124, 70, 16)];
     lab.text = @"Speed";
     lab.textColor = UIColor.lightGrayColor;
     lab.font = [UIFont systemFontOfSize:12];
     [self addSubview:lab];
 
-    _speed = [[UISlider alloc] initWithFrame:CGRectMake(14, 156, frame.size.width - 28, 32)];
-    _speed.minimumValue = 1.3;
-    _speed.maximumValue = 3.6;
-    _speed.value = 2.1;
+    _speed = [[UISlider alloc] initWithFrame:CGRectMake(14, 140, frame.size.width - 28, 32)];
+    _speed.minimumValue = 1.2;
+    _speed.maximumValue = 3.2;
+    _speed.value = 1.8;
     _speed.minimumTrackTintColor = [UIColor colorWithRed:0.0 green:0.82 blue:0.48 alpha:1];
     [_speed addTarget:self action:@selector(speedChanged:) forControlEvents:UIControlEventValueChanged];
     [self addSubview:_speed];
@@ -334,56 +332,26 @@ static void aimAt(CGPoint target) {
     return b;
 }
 
-- (void)closeMenu {
-    self.hidden = YES;
-}
+- (void)closeMenu { self.hidden = YES; }
 
 - (void)toggle {
     self.running = !self.running;
     if (self.running) {
-        [_startBtn setTitle:@"STOP" forState:UIControlStateNormal];
+        [_startBtn setTitle:@"DÉSACTIVER" forState:UIControlStateNormal];
         _startBtn.backgroundColor = [UIColor colorWithRed:0.80 green:0.10 blue:0.10 alpha:1];
         self.state = StateLobby;
         self.stateTimer = 0;
         self.timer = 0;
         [self tick];
     } else {
-        [_startBtn setTitle:@"START AUTO" forState:UIControlStateNormal];
+        [_startBtn setTitle:@"ACTIVER" forState:UIControlStateNormal];
         _startBtn.backgroundColor = [UIColor colorWithRed:0.06 green:0.58 blue:0.30 alpha:1];
         _status.text = @"STOPPED";
         [NSObject cancelPreviousPerformRequestsWithTarget:self];
     }
 }
 
-- (void)toggleAuto {
-    self.autoRestart = !self.autoRestart;
-    [_autoBtn setTitle:self.autoRestart ? @"RESTART 15m: ON" : @"RESTART 15m: OFF" forState:UIControlStateNormal];
-    _autoBtn.backgroundColor = self.autoRestart ? [UIColor colorWithRed:0.10 green:0.40 blue:0.75 alpha:1] : [UIColor colorWithRed:0.30 green:0.30 blue:0.30 alpha:1];
-}
-
-- (void)toggleAim {
-    self.autoAim = !self.autoAim;
-    [_aimBtn setTitle:self.autoAim ? @"AIM: ON" : @"AIM: OFF" forState:UIControlStateNormal];
-    _aimBtn.backgroundColor = self.autoAim ? [UIColor colorWithRed:0.68 green:0.16 blue:0.16 alpha:1] : [UIColor colorWithRed:0.30 green:0.30 blue:0.30 alpha:1];
-}
-
 - (void)speedChanged:(UISlider *)s { self.interval = s.value; }
-
-- (void)fullScan {
-    UIImage *shot = captureScreen();
-    NSArray *chests = scanChests(shot);
-    NSArray *players = scanPlayers(shot);
-    [self.chests removeAllObjects];
-    [self.chests addObjectsFromArray:chests];
-    [self.players removeAllObjects];
-    [self.players addObjectsFromArray:players];
-}
-
-- (BOOL)stillChestAt:(CGPoint)p {
-    UIImage *shot = captureScreen();
-    CGFloat scale = 0.45;
-    return isChestColor(colorAt(shot, CGPointMake(p.x * scale, p.y * scale)));
-}
 
 - (void)tick {
     if (!self.running) return;
@@ -393,8 +361,8 @@ static void aimAt(CGPoint target) {
 
     switch (self.state) {
         case StateLobby:
-            _status.text = @"LOBBY — waiting bus";
-            if (self.stateTimer > 7.0) {
+            _status.text = @"LOBBY";
+            if (self.stateTimer > 6.5) {
                 TapAt(CGPointMake(200, 500), NO);
                 self.state = StateBus;
                 self.stateTimer = 0;
@@ -402,77 +370,98 @@ static void aimAt(CGPoint target) {
             break;
 
         case StateBus:
-            _status.text = @"BUS — dropping soon";
-            if (self.stateTimer > 10.5) {
+            _status.text = @"BUS";
+            if (self.stateTimer > 11.0) {
                 TapAt(CGPointMake(200, 480), NO);
-                lookAround(CGPointMake(0, -26));
+                lookAround(CGPointMake(0, -24));
                 self.state = StateDropping;
                 self.stateTimer = 0;
             }
             break;
 
         case StateDropping:
-            _status.text = @"DROPPING";
-            if (self.stateTimer > 5.0) {
-                moveStick(CGPointMake(0, 1), 1.0);
+            _status.text = @"DROP";
+            if (self.stateTimer > 4.5) {
+                moveStick(CGPointMake(0, 1), 1.2);
                 self.state = StateFarming;
                 self.stateTimer = 0;
-                [self fullScan];
             }
             break;
 
         case StateFarming: {
-            _status.text = [NSString stringWithFormat:@"FARM — %lu c / %lu p", (unsigned long)self.chests.count, (unsigned long)self.players.count];
-            if (self.chests.count == 0 || ((int)self.stateTimer % 16) < 1) {
-                [self fullScan];
-                if (self.chests.count == 0) {
-                    CGPoint dir = CGPointMake((arc4random()%3)-1, (arc4random()%3)-1);
-                    moveStick(dir, 0.65);
-                    lookAround(CGPointMake((arc4random()%48)-24, (arc4random()%34)-17));
+            CGPoint myPos = readPlayerPos();
+            NSArray *memChests = self.useMemory ? readChestWorldPositions() : @[];
+            [self.worldChests removeAllObjects];
+            [self.worldChests addObjectsFromArray:memChests];
+
+            if (self.worldChests.count == 0) {
+                UIImage *shot = captureScreen();
+                NSArray *scr = scanChestsScreen(shot);
+                [self.screenChests removeAllObjects];
+                [self.screenChests addObjectsFromArray:scr];
+                _status.text = [NSString stringWithFormat:@"FARM scr %lu", (unsigned long)self.screenChests.count];
+            } else {
+                _status.text = [NSString stringWithFormat:@"FARM mem %lu", (unsigned long)self.worldChests.count];
+            }
+
+            CGPoint targetWorld = CGPointZero;
+            BOOL hasTarget = NO;
+
+            if (self.worldChests.count > 0) {
+                CGFloat best = 999999;
+                for (NSValue *v in self.worldChests) {
+                    CGPoint c = [v CGPointValue];
+                    CGFloat d = hypotf(c.x - myPos.x, c.y - myPos.y);
+                    if (d < best && d > 30) {
+                        best = d;
+                        targetWorld = c;
+                        hasTarget = YES;
+                    }
                 }
             }
 
-            if (self.autoAim && self.players.count > 0) {
-                CGPoint closest = [self.players[0] CGPointValue];
+            if (hasTarget && myPos.x != 0) {
+                CGPoint dir = CGPointMake(targetWorld.x - myPos.x, targetWorld.y - myPos.y);
+                CGFloat len = hypotf(dir.x, dir.y);
+                if (len > 80) {
+                    dir.x /= len; dir.y /= len;
+                    moveStick(dir, 1.3);
+                    if (arc4random() % 5 == 0) TapAt(CGPointMake(200, 420), NO);
+                    lookAround(CGPointMake(dir.x * 30, dir.y * 20));
+                } else {
+                    // close enough — try open (screen tap fallback)
+                    CGPoint screenCenter = CGPointMake(UIScreen.mainScreen.bounds.size.width / 2,
+                                                       UIScreen.mainScreen.bounds.size.height / 2);
+                    TapAt(screenCenter, YES);
+                }
+            } else if (self.screenChests.count > 0) {
+                CGPoint t = [self.screenChests[0] CGPointValue];
                 CGPoint center = CGPointMake(UIScreen.mainScreen.bounds.size.width / 2,
                                              UIScreen.mainScreen.bounds.size.height / 2);
-                CGFloat best = 99999;
-                for (NSValue *v in self.players) {
-                    CGPoint p = [v CGPointValue];
-                    CGFloat d = hypot(p.x - center.x, p.y - center.y);
-                    if (d < best) { best = d; closest = p; }
+                CGPoint dir = CGPointMake(t.x - center.x, t.y - center.y);
+                CGFloat len = hypotf(dir.x, dir.y);
+                if (len > 50) {
+                    dir.x /= len; dir.y /= len;
+                    moveStick(dir, 1.0);
+                } else {
+                    TapAt(t, YES);
                 }
-                aimAt(closest);
-            }
-
-            if (self.chests.count > 0) {
-                NSInteger idx = arc4random_uniform((uint32_t)self.chests.count);
-                CGPoint p = [self.chests[idx] CGPointValue];
-                TapAt(p, YES);
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.48 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                    if (![self stillChestAt:p]) {
-                        if (idx < self.chests.count) [self.chests removeObjectAtIndex:idx];
-                    }
-                });
+            } else {
+                // wander
+                moveStick(CGPointMake((arc4random() % 200 - 100) / 100.0f, 0.6), 0.8);
             }
             break;
         }
 
-        case StateRestart:
+        default:
             break;
     }
 
-    if (self.autoRestart && self.timer >= 900.0) {
-        _status.text = @"RESTART MATCH";
-        TapAt(self.restartPoint, NO);
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            TapAt(self.restartPoint, NO);
-        });
+    if (self.timer >= 900.0) {
+        TapAt(CGPointMake(210, 640), NO);
         self.timer = 0;
         self.state = StateLobby;
         self.stateTimer = 0;
-        [self.chests removeAllObjects];
-        [self.players removeAllObjects];
     }
 
     [self performSelector:@selector(tick) withObject:nil afterDelay:self.interval];
@@ -486,7 +475,7 @@ static void aimAt(CGPoint target) {
 
 @end
 
-#pragma mark - Bootstrap + réouverture
+#pragma mark - Bootstrap
 
 static UIWindow *gWin = nil;
 static FarmMenu *gMenu = nil;
@@ -494,8 +483,15 @@ static FarmMenu *gMenu = nil;
 __attribute__((constructor))
 static void init(void) {
     denyAttach();
-    antiDebugTiming();
     if (isDebugged()) return;
+
+    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
+        const char *name = _dyld_get_image_name(i);
+        if (name && strstr(name, "Fortnite")) {
+            gameBase = (uintptr_t)_dyld_get_image_header(i);
+            break;
+        }
+    }
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         gWin = [[UIWindow alloc] initWithFrame:UIScreen.mainScreen.bounds];
@@ -504,7 +500,7 @@ static void init(void) {
         gWin.hidden = NO;
         gWin.userInteractionEnabled = YES;
 
-        gMenu = [[FarmMenu alloc] initWithFrame:CGRectMake(12, 85, 300, 200)];
+        gMenu = [[FarmMenu alloc] initWithFrame:CGRectMake(12, 85, 220, 190)];
         [gWin addSubview:gMenu];
         [gMenu addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:gMenu action:@selector(handlePan:)]];
 
@@ -515,7 +511,5 @@ static void init(void) {
 }
 
 @implementation FarmMenu (Reopen)
-- (void)reopen {
-    self.hidden = NO;
-}
+- (void)reopen { self.hidden = NO; }
 @end
