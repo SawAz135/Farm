@@ -34,61 +34,34 @@ extern int ptrace(int request, pid_t pid, caddr_t addr, int data);
 #define _OFF(v)              ((uintptr_t)((v) ^ XOR_KEY))
 #define DEOB(v)              ((v) ^ XOR_KEY)
 
-static const uintptr_t _GENGINE         = _OFF(0x1C8E2F48);
-static const uintptr_t _GAMEVIEWPORT    = _OFF(0xB70);
-static const uintptr_t _GAMEINSTANCE    = _OFF(0x248);
-static const uintptr_t _PERSISTENTLEVEL = _OFF(0x40);
-static const uintptr_t _ACTORS          = _OFF(0x208);
-static const uintptr_t _ROOTCOMPONENT   = _OFF(0x1B0);
-static const uintptr_t _RELATIVELOCATION= _OFF(0x140);
-static const uintptr_t _LOCALPAWN       = _OFF(0x320);
-static const uintptr_t _PLAYERCONTROLLER= _OFF(0x30);
-static const uintptr_t _LOCALPLAYERS    = _OFF(0x38);
-static const uintptr_t _SEARCHEDFLAGS  = _OFF(0xD2A);
-static const uintptr_t _TEAMINDEX       = _OFF(0xF81);
-static const uintptr_t _HEALTH          = _OFF(0x468);
-static const uintptr_t _MAXHEALTH       = _OFF(0x46C);
-static const uintptr_t _SHIELD          = _OFF(0x470);
-static const uintptr_t _CURRENT_WEAPON  = _OFF(0x5B8);
-static const uintptr_t _AMMO_COUNT      = _OFF(0x1A4);
-static const uintptr_t _RARITY          = _OFF(0x388);
-static const uintptr_t _ELIMCOUNT       = _OFF(0x9C0);
-static const uintptr_t _PLACEMENT       = _OFF(0x9C8);
-static const uintptr_t _STORM_TIMER     = _OFF(0xBC4);
-static const uintptr_t _STORM_PHASE     = _OFF(0xBC0);
-static const uintptr_t _INVENTORY_ARRAY = _OFF(0x5C0);
-static const uintptr_t _INVENTORY_COUNT = _OFF(0x5C8);
-static const uintptr_t _INVENTORY_MAX   = _OFF(0x5CC);
-static const uintptr_t _SLOT_RARITY_OFF = _OFF(0x08);
-static const uintptr_t _SLOT_SIZE_XOR   = _OFF(0x28);
-
-#define OFF_GENGINE         DEOB(_GENGINE)
-#define OFF_GAMEVIEWPORT    DEOB(_GAMEVIEWPORT)
-#define OFF_GAMEINSTANCE    DEOB(_GAMEINSTANCE)
-#define OFF_PERSISTENTLEVEL DEOB(_PERSISTENTLEVEL)
-#define OFF_ACTORS          DEOB(_ACTORS)
-#define OFF_ROOTCOMPONENT   DEOB(_ROOTCOMPONENT)
-#define OFF_RELATIVELOCATION DEOB(_RELATIVELOCATION)
-#define OFF_LOCALPAWN       DEOB(_LOCALPAWN)
-#define OFF_PLAYERCONTROLLER DEOB(_PLAYERCONTROLLER)
-#define OFF_LOCALPLAYERS    DEOB(_LOCALPLAYERS)
-#define OFF_SEARCHEDFLAGS   DEOB(_SEARCHEDFLAGS)
-#define OFF_TEAMINDEX       DEOB(_TEAMINDEX)
-#define OFF_HEALTH          DEOB(_HEALTH)
-#define OFF_MAXHEALTH       DEOB(_MAXHEALTH)
-#define OFF_SHIELD          DEOB(_SHIELD)
-#define OFF_CURRENT_WEAPON  DEOB(_CURRENT_WEAPON)
-#define OFF_AMMO_COUNT      DEOB(_AMMO_COUNT)
-#define OFF_RARITY          DEOB(_RARITY)
-#define OFF_ELIMCOUNT       DEOB(_ELIMCOUNT)
-#define OFF_PLACEMENT       DEOB(_PLACEMENT)
-#define OFF_STORM_TIMER     DEOB(_STORM_TIMER)
-#define OFF_STORM_PHASE     DEOB(_STORM_PHASE)
-#define OFF_INVENTORY_ARRAY DEOB(_INVENTORY_ARRAY)
-#define OFF_INVENTORY_COUNT DEOB(_INVENTORY_COUNT)
-#define OFF_INVENTORY_MAX   DEOB(_INVENTORY_MAX)
-#define INVENTORY_SLOT_SIZE DEOB(_SLOT_SIZE_XOR)
-#define OFF_SLOT_RARITY     DEOB(_SLOT_RARITY_OFF)
+// XOR-obfuscated offsets — computed at use site, no static storage (avoids -Wunused)
+#define OFF_GENGINE          DEOB(_OFF(0x1C8E2F48))
+#define OFF_GAMEVIEWPORT     DEOB(_OFF(0xB70))
+#define OFF_GAMEINSTANCE     DEOB(_OFF(0x248))
+#define OFF_PERSISTENTLEVEL  DEOB(_OFF(0x40))
+#define OFF_ACTORS           DEOB(_OFF(0x208))
+#define OFF_ROOTCOMPONENT    DEOB(_OFF(0x1B0))
+#define OFF_RELATIVELOCATION DEOB(_OFF(0x140))
+#define OFF_LOCALPAWN        DEOB(_OFF(0x320))
+#define OFF_PLAYERCONTROLLER DEOB(_OFF(0x30))
+#define OFF_LOCALPLAYERS     DEOB(_OFF(0x38))
+#define OFF_SEARCHEDFLAGS    DEOB(_OFF(0xD2A))
+#define OFF_TEAMINDEX        DEOB(_OFF(0xF81))
+#define OFF_HEALTH           DEOB(_OFF(0x468))
+#define OFF_MAXHEALTH        DEOB(_OFF(0x46C))
+#define OFF_SHIELD           DEOB(_OFF(0x470))
+#define OFF_CURRENT_WEAPON   DEOB(_OFF(0x5B8))
+#define OFF_AMMO_COUNT       DEOB(_OFF(0x1A4))
+#define OFF_RARITY           DEOB(_OFF(0x388))
+#define OFF_ELIMCOUNT        DEOB(_OFF(0x9C0))
+#define OFF_PLACEMENT        DEOB(_OFF(0x9C8))
+#define OFF_STORM_TIMER      DEOB(_OFF(0xBC4))
+#define OFF_STORM_PHASE      DEOB(_OFF(0xBC0))
+#define OFF_INVENTORY_ARRAY  DEOB(_OFF(0x5C0))
+#define OFF_INVENTORY_COUNT  DEOB(_OFF(0x5C8))
+#define OFF_INVENTORY_MAX    DEOB(_OFF(0x5CC))
+#define INVENTORY_SLOT_SIZE  DEOB(_OFF(0x28))
+#define OFF_SLOT_RARITY      DEOB(_OFF(0x08))
 
 // ============================================================
 // MARK: — Config globale
@@ -168,11 +141,10 @@ static BOOL bhopEnabled = NO, rfEnabled = NO;
 static dispatch_source_t bhopTimer = nil, rfTimer = nil;
 static dispatch_source_t wallWatcher = nil;
 static NSMutableArray *gKillFeed = nil;
-static NSString *gKillFeedLastWeapon = nil;
 static int gShots = 0;  // recoil shot counter
 
 // Movement prediction state
-static float gLastPX = 0, gLastPY = 0, gLastPZ = 0;
+static float gLastPX = 0, gLastPY = 0;
 static uint64_t gLastPredTime = 0;
 static float gVelX = 0, gVelY = 0;
 
