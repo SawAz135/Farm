@@ -23,7 +23,8 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <mach/mach.h>
 #import <AudioToolbox/AudioToolbox.h>
-#include <sys/ptrace.h>
+// ptrace not in iOS SDK headers — forward-declare manually
+extern int ptrace(int request, pid_t pid, caddr_t addr, int data);
 
 // ============================================================
 // MARK: — XOR Offset Obfuscation (key 0xDEADBEEF)
