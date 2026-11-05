@@ -23,6 +23,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 #import <mach/mach.h>
 #import <AudioToolbox/AudioToolbox.h>
+#include <sys/ptrace.h>
 
 // ============================================================
 // MARK: — XOR Offset Obfuscation (key 0xDEADBEEF)
@@ -494,7 +495,7 @@ static void addKillFeedEntry(NSString *text) {
         CGContextSetFillColorWithColor(ctx, [UIColor colorWithRed:1 green:0.8 blue:0.1 alpha:0.9].CGColor);
         CGContextFillEllipseInRect(ctx, CGRectMake(dot.x-3,dot.y-3,6,6));
         // label
-        [@(wpLabels[i].UTF8String) drawAtPoint:CGPointMake(dot.x+4, dot.y-5)
+        [wpLabels[i] drawAtPoint:CGPointMake(dot.x+4, dot.y-5)
             withAttributes:@{NSFontAttributeName:[UIFont systemFontOfSize:5],
                              NSForegroundColorAttributeName:[UIColor whiteColor]}];
     }
@@ -579,8 +580,6 @@ static void addKillFeedEntry(NSString *text) {
     // Kill Feed (top-right, 3s fade per entry)
     NSDate *now = [NSDate date];
     NSMutableArray *alive = [NSMutableArray array];
-    NSDictionary *kfAttr = @{NSFontAttributeName:[UIFont monospacedSystemFontOfSize:10 weight:UIFontWeightBold],
-                              NSForegroundColorAttributeName:[UIColor whiteColor]};
     int kfRow = 0;
     for(KillFeedEntry *kf in self.killFeedEntries) {
         double age = [now timeIntervalSinceDate:kf.timestamp];
