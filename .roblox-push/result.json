@@ -1,0 +1,41 @@
+{
+  "id": "mwoyad8zhift",
+  "action": "publish",
+  "meta": null,
+  "ok": true,
+  "published": true,
+  "version": 607,
+  "versionType": "Published",
+  "universeId": "3982038893",
+  "placeId": "11131487129",
+  "kind": "rbxl",
+  "gameName": "Throw Fish For Bear \ud83d\udc3b",
+  "autoProject": null,
+  "packs": [],
+  "packName": null,
+  "blender": null,
+  "voxel": null,
+  "steps": {
+    "prepare": {
+      "ok": true,
+      "detail": "rbxl: .roblox-push/game.rbxl"
+    },
+    "stage": {
+      "ok": true,
+      "detail": "0 pack(s): none"
+    },
+    "publish": {
+      "ok": true,
+      "detail": "version 607"
+    },
+    "store": {
+      "ok": true,
+      "detail": "11131487129/base.rbxl"
+    }
+  },
+  "luau": null,
+  "error": null,
+  "playUrl": "https://www.roblox.com/games/11131487129",
+  "runUrl": "https://github.com/SawAz135/Farm/actions/runs/44735430108",
+  "seconds": 7.5
+}
