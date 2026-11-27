@@ -1,0 +1,41 @@
+{
+  "id": "mwz73c3f9i5j",
+  "action": "publish",
+  "meta": null,
+  "ok": true,
+  "published": true,
+  "version": 208,
+  "versionType": "Published",
+  "universeId": "3980498024",
+  "placeId": "11126920356",
+  "kind": "rbxl",
+  "gameName": "Why is this",
+  "autoProject": null,
+  "packs": [],
+  "packName": null,
+  "blender": null,
+  "voxel": null,
+  "steps": {
+    "prepare": {
+      "ok": true,
+      "detail": "rbxl: .roblox-push/game.rbxl"
+    },
+    "stage": {
+      "ok": true,
+      "detail": "0 pack(s): none"
+    },
+    "publish": {
+      "ok": true,
+      "detail": "version 208"
+    },
+    "store": {
+      "ok": true,
+      "detail": "11126920356/base.rbxl"
+    }
+  },
+  "luau": null,
+  "error": null,
+  "playUrl": "https://www.roblox.com/games/11126920356",
+  "runUrl": "https://github.com/SawAz135/Farm/actions/runs/46033842912",
+  "seconds": 5.8
+}
